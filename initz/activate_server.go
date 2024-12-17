@@ -2,6 +2,7 @@ package initz
 
 import (
 	"context"
+	goerrors "errors"
 	"html/template"
 	"net/http"
 	"os"
@@ -13,6 +14,12 @@ import (
 
 const (
 	KeyBaetylSyncAddr = "BAETYL_SYNC_ADDR"
+)
+
+var (
+	errMethodNotAllowed = errors.New("method not allowed")
+	errBadRequest       = errors.New("bad request")
+	errForbidden        = errors.New("Forbidden")
 )
 
 func (active *Activate) startServer() error {
@@ -52,15 +59,13 @@ func (active *Activate) handleView(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (active *Activate) handleUpdate(w http.ResponseWriter, req *http.Request) {
+func (active *Activate) handleActiveImpl(req *http.Request) error {
 	if req.Method != http.MethodPost {
-		http.Error(w, "post only", http.StatusMethodNotAllowed)
-		return
+		return errMethodNotAllowed
 	}
 	err := req.ParseForm()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return errBadRequest
 	}
 	attributes := make(map[string]string)
 	for _, attr := range active.cfg.Init.Active.Collector.Attributes {
@@ -93,12 +98,25 @@ func (active *Activate) handleUpdate(w http.ResponseWriter, req *http.Request) {
 
 	}
 	if syncAddr, ok := attributes["syncAddr"]; ok {
-		os.Setenv(KeyBaetylSyncAddr, syncAddr)
+		_ = os.Setenv(KeyBaetylSyncAddr, syncAddr)
+	}
+	return active.activate()
+}
+
+func (active *Activate) handleUpdate(w http.ResponseWriter, req *http.Request) {
+	err := active.handleActiveImpl(req)
+	switch {
+	case goerrors.Is(err, errMethodNotAllowed):
+		http.Error(w, "post only", http.StatusMethodNotAllowed)
+		return
+	case goerrors.Is(err, errBadRequest):
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	default:
 	}
 
 	var tpl *template.Template
 	page := "/success.html.template"
-	active.activate()
 	if !utils.FileExists(active.cfg.Node.Cert) {
 		page = "/failed.html.template"
 	}
@@ -115,53 +133,17 @@ func (active *Activate) handleUpdate(w http.ResponseWriter, req *http.Request) {
 }
 
 func (active *Activate) handleActive(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
+	err := active.handleActiveImpl(req)
+	switch {
+	case goerrors.Is(err, errMethodNotAllowed):
 		http.Error(w, "post only", http.StatusMethodNotAllowed)
-		return
-	}
-	err := req.ParseForm()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	attributes := make(map[string]string)
-	for _, attr := range active.cfg.Init.Active.Collector.Attributes {
-		val := req.Form.Get(attr.Name)
-		if val == "" {
-			attributes[attr.Name] = attr.Value
-		} else {
-			attributes[attr.Name] = val
-		}
-	}
-	for _, ni := range active.cfg.Init.Active.Collector.NodeInfo {
-		val := req.Form.Get(ni.Name)
-		attributes[ni.Name] = val
-	}
-	for _, si := range active.cfg.Init.Active.Collector.Serial {
-		val := req.Form.Get(si.Name)
-		attributes[si.Name] = val
-	}
-	active.log.Info("active", log.Any("server attrs", attributes))
-	active.attrs = attributes
-
-	if batchName, ok := attributes["batch"]; ok {
-		active.batch.name = batchName
-	}
-	if ns, ok := attributes["namespace"]; ok {
-		active.batch.namespace = ns
-	}
-	if initAddr, ok := attributes["initAddr"]; ok {
-		active.cfg.Init.Active.Address = initAddr
-
-	}
-	if syncAddr, ok := attributes["syncAddr"]; ok {
-		os.Setenv(KeyBaetylSyncAddr, syncAddr)
-	}
-
-	err = active.activate()
-	if err != nil {
+	case goerrors.Is(err, errBadRequest):
+		http.Error(w, "bad request", http.StatusBadRequest)
+	case goerrors.Is(err, errForbidden):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	default:
+		_, _ = w.Write([]byte("active success"))
 	}
-	w.Write([]byte("active success"))
 }

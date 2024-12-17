@@ -174,8 +174,13 @@ func (active *Activate) activate() error {
 	data, err = http.HandleResponse(resp)
 	if err != nil {
 		active.log.Error("failed to send activate data", log.Error(err))
+		if resp.StatusCode == gohttp.StatusForbidden {
+			// 目前设备重复会返回 403 Forbidden
+			return errForbidden
+		}
 		return err
 	}
+
 	var res v1.ActiveResponse
 	err = json.Unmarshal(data, &res)
 	if err != nil {
