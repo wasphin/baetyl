@@ -31,6 +31,13 @@ func Wrapper(handler HandlerFunc) func(ctx *routing.Context) error {
 			http.RespondMsg(ctx, 500, "UnknownError", err.Error())
 			return nil
 		}
+
+		if body, ok := res.([]byte); ok {
+			log.L().Debug("process success", log.Any("response", res))
+			http.Respond(ctx, 200, body)
+			return nil
+		}
+
 		log.L().Debug("process success", log.Any("response", toJson(res)))
 		http.Respond(ctx, 200, toJson(res))
 		return nil
