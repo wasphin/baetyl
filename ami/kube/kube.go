@@ -1,6 +1,7 @@
 package kube
 
 import (
+	goerrors "errors"
 	"log"
 	"os"
 
@@ -105,7 +106,7 @@ func (k *kubeImpl) DeleteApp(ns string, app specv1.AppInfo) error {
 	delApp := new(specv1.Application)
 	key := utils.MakeKey(specv1.KindApplication, app.Name, app.Version)
 	err := k.store.Get(key, delApp)
-	if err != nil {
+	if err != nil && !goerrors.Is(err, bh.ErrNotFound) {
 		return err
 	}
 	// delete yaml app
