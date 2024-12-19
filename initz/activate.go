@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/baetyl/baetyl-go/v2/comctx"
 	"github.com/baetyl/baetyl-go/v2/context"
 	"github.com/baetyl/baetyl-go/v2/errors"
 	"github.com/baetyl/baetyl-go/v2/http"
@@ -109,7 +110,7 @@ func (active *Activate) Close() {
 		active.closeServer()
 	}
 	active.tomb.Kill(nil)
-	active.tomb.Wait()
+	_ = active.tomb.Wait()
 }
 
 func (active *Activate) WaitAndClose() {
@@ -120,14 +121,14 @@ func (active *Activate) WaitAndClose() {
 }
 
 func (active *Activate) activating() error {
-	active.activate()
+	_ = active.activate()
 	t := time.NewTicker(active.cfg.Init.Active.Interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(100)))
-			active.activate()
+			_ = active.activate()
 		case <-active.tomb.Dying():
 			return nil
 		}
@@ -147,17 +148,17 @@ func (active *Activate) activate() error {
 	fv, err := active.collect()
 	if err != nil {
 		active.log.Error("failed to get fingerprint value", log.Error(err))
-		return err
+		return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 	}
 	if fv == "" {
 		active.log.Error("fingerprint value is null", log.Error(err))
-		return errors.New("fingerprint value is null")
+		return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 	}
 	info.FingerprintValue = fv
 	data, err := json.Marshal(info)
 	if err != nil {
 		active.log.Error("failed to marshal activate info", log.Error(err))
-		return err
+		return comctx.Error(comctx.ErrRequestParamInvalid, comctx.Field("error", err))
 	}
 	active.log.Debug("active", log.Any("info data", string(data)))
 
@@ -168,16 +169,20 @@ func (active *Activate) activate() error {
 	resp, err := active.http.PostURL(url, bytes.NewReader(data), headers)
 	if err != nil {
 		active.log.Error("failed to send activate data", log.Error(err))
-		return err
+		return comctx.Error(comctx.ErrIO, comctx.Field("error", err))
 	}
 
 	data, err = http.HandleResponse(resp)
 	if err != nil {
-		active.log.Error("failed to send activate data", log.Error(err))
-		if resp.StatusCode == gohttp.StatusForbidden {
-			// 目前设备重复会返回 403 Forbidden
-			return errForbidden
+		response := &struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}{}
+		if e := json.Unmarshal(data, &response); e == nil {
+			return comctx.Error(comctx.Code(response.Code), comctx.Field("msg", response.Message))
 		}
+
+		active.log.Error("failed to send activate data", log.Error(err))
 		return err
 	}
 
@@ -185,18 +190,18 @@ func (active *Activate) activate() error {
 	err = json.Unmarshal(data, &res)
 	if err != nil {
 		active.log.Error("failed to unmarshal activate response data returned", log.Error(err))
-		return err
+		return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 	}
 
 	if err = genCert(&active.cfg.Node, res.Certificate); err != nil {
 		active.log.Error("failed to create cert file", log.Error(err))
-		return err
+		return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 	}
 
 	if active.cfg.Plugin.Link == LinkMqtt {
 		if err = genCert(&active.cfg.MqttLink.Cert, res.MqttCert); err != nil {
 			active.log.Error("failed to create mqtt cert file", log.Error(err))
-			return err
+			return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 		}
 	}
 
