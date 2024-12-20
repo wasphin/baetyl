@@ -204,6 +204,9 @@ func (active *Activate) activate() error {
 			return comctx.Error(comctx.ErrUnknown, comctx.Field("error", err))
 		}
 	}
+	if res.SyncAddr != "" {
+		_ = os.Setenv(KeyBaetylSyncAddr, res.SyncAddr)
+	}
 
 	active.sig <- true
 	return nil
