@@ -86,10 +86,17 @@ func NewSync(cfg config.Config, store *bh.Store, nod node.Node) (Sync, error) {
 }
 
 func (s *sync) Start() {
+	s.log.Info("sync starting")
+	defer s.log.Info("sync started")
+
 	if s.link.IsAsyncSupported() {
-		s.tomb.Go(s.receiving)
+		if err := s.tomb.Go(s.receiving); err != nil {
+			s.log.Error("fail to start receiving", log.Error(err))
+		}
 	}
-	s.tomb.Go(s.reporting)
+	if err := s.tomb.Go(s.reporting); err != nil {
+		s.log.Error("fail to start reporting", log.Error(err))
+	}
 }
 
 func (s *sync) receiving() error {
@@ -204,8 +211,13 @@ func (s *sync) sendEvent(delta v1.Delta) error {
 }
 
 func (s *sync) Close() {
+	s.log.Info("sync closing")
+	defer s.log.Info("sync closed")
+
 	s.tomb.Kill(nil)
-	s.tomb.Wait()
+	if err := s.tomb.Wait(); err != nil {
+		s.log.Warn("sync wait get non-nil reason", log.Error(err))
+	}
 }
 
 func (s *sync) reportAsync(r v1.Report) error {
@@ -243,7 +255,7 @@ func (s *sync) Report(r v1.Report) (v1.Desire, error) {
 
 func (s *sync) reporting() error {
 	s.log.Info("sync starts to report")
-	defer s.log.Info("sync has stopped reporting")
+	defer s.log.Info("sync reporting stopped")
 
 	err := s.reportAndDesire()
 	if err != nil {
