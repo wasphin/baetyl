@@ -576,6 +576,8 @@ func (e *engineImpl) Close() {
 	if err := e.tomb.Wait(); err != nil {
 		e.log.Warn("engine wait get non-nil reason", log.Error(err))
 	}
+	// reset tomb for further use
+	e.tomb = v2utils.Tomb{}
 	if e.pb != nil {
 		err := e.pb.Unsubscribe(sync.TopicDownside, e.downsideChan)
 		if err != nil {

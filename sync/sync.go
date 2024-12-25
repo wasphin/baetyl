@@ -218,6 +218,8 @@ func (s *sync) Close() {
 	if err := s.tomb.Wait(); err != nil {
 		s.log.Warn("sync wait get non-nil reason", log.Error(err))
 	}
+	// reset tomb for further use
+	s.tomb = utils.Tomb{}
 }
 
 func (s *sync) reportAsync(r v1.Report) error {
