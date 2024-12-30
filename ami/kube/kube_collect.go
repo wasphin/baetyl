@@ -2,6 +2,7 @@ package kube
 
 import (
 	"context"
+	"net"
 
 	gctx "github.com/baetyl/baetyl-go/v2/context"
 	"github.com/baetyl/baetyl-go/v2/errors"
@@ -60,7 +61,9 @@ func (k *kubeImpl) CollectNodeInfo() (map[string]interface{}, error) {
 				nodeInfo.Hostname = addr.Address
 			}
 			if addr.Type == corev1.NodeInternalIP {
-				nodeInfo.Address = addr.Address
+				if net.ParseIP(addr.Address).To4() != nil {
+					nodeInfo.Address = addr.Address
+				}
 			}
 		}
 		for k := range node.GetLabels() {
