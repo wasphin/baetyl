@@ -137,6 +137,16 @@ func (s *sync) receiving() error {
 }
 
 func (s *sync) dispatch(msg *v1.Message) error {
+	if msg.Kind != v1.MessageCMD {
+		// do not parse env at plugin level, but at command level
+		data, err := utils.ParseEnv(msg.Content.GetJSON())
+		if err != nil {
+			s.log.Error("failed to parse env", log.Error(err))
+			return errors.Trace(err)
+		}
+		msg.Content.SetJSON(data)
+	}
+
 	switch msg.Kind {
 	case v1.MessageReport:
 		_, err := s.nod.Get()
