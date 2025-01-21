@@ -11,7 +11,7 @@ import (
 	goplugin "github.com/baetyl/baetyl-go/v2/plugin"
 	"github.com/baetyl/baetyl-go/v2/pubsub"
 	v1 "github.com/baetyl/baetyl-go/v2/spec/v1"
-	"github.com/baetyl/baetyl-go/v2/utils"
+	goutils "github.com/baetyl/baetyl-go/v2/utils"
 	bh "github.com/timshannon/bolthold"
 	"k8s.io/apimachinery/pkg/util/rand"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/baetyl/baetyl/v2/eventx"
 	"github.com/baetyl/baetyl/v2/node"
 	"github.com/baetyl/baetyl/v2/plugin"
+	"github.com/baetyl/baetyl/v2/utils"
 )
 
 const (
@@ -52,7 +53,7 @@ type sync struct {
 	link  plugin.Link
 	store *bh.Store
 	nod   node.Node
-	tomb  utils.Tomb
+	tomb  goutils.Tomb
 	log   *log.Logger
 	// for downloading objects
 	download *http.Client
@@ -138,13 +139,12 @@ func (s *sync) receiving() error {
 
 func (s *sync) dispatch(msg *v1.Message) error {
 	if msg.Kind != v1.MessageCMD {
-		// do not parse env at plugin level, but at command level
-		data, err := utils.ParseEnv(msg.Content.GetJSON())
+		// do not parse env at plugin level, but at message kind level
+		err := utils.UnwrapEnv(msg)
 		if err != nil {
 			s.log.Error("failed to parse env", log.Error(err))
 			return errors.Trace(err)
 		}
-		msg.Content.SetJSON(data)
 	}
 
 	switch msg.Kind {
@@ -229,7 +229,7 @@ func (s *sync) Close() {
 		s.log.Warn("sync wait get non-nil reason", log.Error(err))
 	}
 	// reset tomb for further use
-	s.tomb = utils.Tomb{}
+	s.tomb = goutils.Tomb{}
 }
 
 func (s *sync) reportAsync(r v1.Report) error {
@@ -252,7 +252,7 @@ func (s *sync) Report(r v1.Report) (v1.Desire, error) {
 		Metadata: map[string]string{"source": os.Getenv(context.KeySvcName)},
 		Content:  v1.LazyValue{Value: r},
 	}
-	res, err := s.link.Request(msg)
+	res, err := utils.RequestWithEnvUnwrapped(s.link, msg)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

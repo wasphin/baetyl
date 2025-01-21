@@ -5,6 +5,7 @@ import (
 	"github.com/baetyl/baetyl-go/v2/errors"
 	"github.com/baetyl/baetyl-go/v2/log"
 	specv1 "github.com/baetyl/baetyl-go/v2/spec/v1"
+	"github.com/baetyl/baetyl/v2/utils"
 )
 
 func (s *sync) SyncApps(infos []specv1.AppInfo) (map[string]specv1.Application, error) {
@@ -109,7 +110,7 @@ func (s *sync) syncResourceValues(crds []specv1.ResourceInfo) ([]specv1.Resource
 	if context.RunMode() == context.RunModeNative {
 		msg.Metadata["x-baetyl-platform"] = context.PlatformString()
 	}
-	res, err := s.link.Request(msg)
+	res, err := utils.RequestWithEnvUnwrapped(s.link, msg)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
