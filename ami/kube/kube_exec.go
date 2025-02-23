@@ -15,7 +15,7 @@ import (
 	"github.com/baetyl/baetyl/v2/ami"
 )
 
-func (k *kubeImpl) RemoteCommand(option *ami.DebugOptions, pipe ami.Pipe) error {
+func (k *kubeImpl) remoteCommandPod(option *ami.KubeDebugOptions, pipe ami.Pipe) error {
 	req := k.cli.core.RESTClient().Post().Resource("pods").
 		Name(option.Name).Namespace(option.Namespace).SubResource("exec")
 
@@ -50,6 +50,14 @@ func (k *kubeImpl) RemoteCommand(option *ami.DebugOptions, pipe ami.Pipe) error 
 		return errors.Trace(err)
 	}
 	return nil
+}
+
+func (k *kubeImpl) RemoteCommand(option *ami.DebugOptions, pipe ami.Pipe) error {
+	if option.NativeDebugOptions.IP != "" {
+		return ami.OpenNativeSshSession(&option.NativeDebugOptions, pipe)
+	}
+
+	return k.remoteCommandPod(&option.KubeDebugOptions, pipe)
 }
 
 func (k *kubeImpl) RemoteWebsocket(ctx context.Context, option *ami.DebugOptions, pipe ami.Pipe) error {
