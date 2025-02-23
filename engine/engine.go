@@ -112,9 +112,16 @@ func NewEngine(cfg config.Config, sto *bh.Store, nod node.Node, syn sync.Sync, a
 }
 
 func (e *engineImpl) Start() {
-	e.tomb.Go(e.reporting)
+	e.log.Info("engine starting")
+	defer e.log.Info("engine started")
+
+	if err := e.tomb.Go(e.reporting); err != nil {
+		e.log.Error("fail to start reporting", log.Error(err))
+	}
 	if os.Getenv(context.KeySvcName) == specv1.BaetylCore {
-		e.tomb.Go(e.cleaning)
+		if err := e.tomb.Go(e.cleaning); err != nil {
+			e.log.Error("fail to start cleaning", log.Error(err))
+		}
 	}
 	ch, err := e.pb.Subscribe(sync.TopicDownside)
 	if err != nil {
@@ -563,9 +570,14 @@ func (e *engineImpl) validParam(tailLines, sinceSeconds string) (itailLines, isi
 }
 
 func (e *engineImpl) Close() {
-	e.log.Debug("engine close")
+	e.log.Info("engine closing")
+	defer e.log.Info("engine closed")
 	e.tomb.Kill(nil)
-	e.tomb.Wait()
+	if err := e.tomb.Wait(); err != nil {
+		e.log.Warn("engine wait get non-nil reason", log.Error(err))
+	}
+	// reset tomb for further use
+	e.tomb = v2utils.Tomb{}
 	if e.pb != nil {
 		err := e.pb.Unsubscribe(sync.TopicDownside, e.downsideChan)
 		if err != nil {
