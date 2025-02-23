@@ -29,7 +29,6 @@ import (
 	gnet "github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	bh "github.com/timshannon/bolthold"
-	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 
 	"github.com/baetyl/baetyl/v2/ami"
@@ -47,11 +46,6 @@ var (
 )
 
 const (
-	Rows         = 80
-	Cols         = 160
-	TtySpeed     = 14400
-	Term         = "xterm"
-	Network      = "tcp"
 	LocalAddress = "0.0.0.0"
 	PrefixHTTP   = "http://"
 	PrefixHTTPS  = "https://"
@@ -110,49 +104,7 @@ func (impl *nativeImpl) RemoteWebsocket(ctx context.Context, option *ami.DebugOp
 
 // RemoteCommand Implement of native
 func (impl *nativeImpl) RemoteCommand(option *ami.DebugOptions, pipe ami.Pipe) error {
-	cfg := &ssh.ClientConfig{
-		User: option.Username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(option.Password),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-	server := fmt.Sprintf("%s:%s", option.IP, option.Port)
-	conn, err := ssh.Dial(Network, server, cfg)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	defer conn.Close()
-
-	session, err := conn.NewSession()
-	if err != nil {
-		return errors.Trace(err)
-	}
-	defer session.Close()
-
-	session.Stdout = pipe.OutWriter
-	session.Stderr = pipe.OutWriter
-	session.Stdin = pipe.InReader
-
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,        // enable echo
-		ssh.TTY_OP_ISPEED: TtySpeed, // input speed = 14.4kbaud
-		ssh.TTY_OP_OSPEED: TtySpeed, // output speed = 14.4kbaud
-	}
-
-	// TODO: support window resize
-	if err = session.RequestPty(Term, Rows, Cols, modes); err != nil {
-		return errors.Trace(err)
-	}
-	// Start remote shell
-	if err = session.Shell(); err != nil {
-		return errors.Trace(err)
-	}
-	err = session.Wait()
-	if err != nil {
-		impl.log.Warn("ssh session log out with exception")
-	}
-	return nil
+	return ami.OpenNativeSshSession(&option.NativeDebugOptions, pipe)
 }
 
 // TODO: impl native RemoteDescribePod
