@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	gohttp "net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/baetyl/baetyl-go/v2/http"
 	"github.com/baetyl/baetyl-go/v2/log"
 	specv1 "github.com/baetyl/baetyl-go/v2/spec/v1"
-	"github.com/baetyl/baetyl-go/v2/utils"
+	goutils "github.com/baetyl/baetyl-go/v2/utils"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/baetyl/baetyl/v2/utils"
 )
 
 func TestRequest(t *testing.T) {
@@ -19,33 +22,38 @@ func TestRequest(t *testing.T) {
 	de := &specv1.Desire{"apps": apps}
 	data1, err := json.Marshal(de)
 	assert.NoError(t, err)
+
+	appVersionKey := "BAETYL_APP_VERSION"
+	appVersionTemplate := "{{." + appVersionKey + "}}"
+	appVersion := "123"
 	appRes := specv1.DesireResponse{Values: []specv1.ResourceValue{
 		{
 			ResourceInfo: specv1.ResourceInfo{Kind: specv1.KindApplication},
-			Value:        specv1.LazyValue{Value: &specv1.Application{Name: "app1", Version: "123"}}},
+			Value:        specv1.LazyValue{Value: &specv1.Application{Name: "app1", Version: appVersionTemplate}}},
 	},
 	}
 	data2, err := json.Marshal(appRes)
 	assert.NoError(t, err)
-	tlssvr, err := utils.NewTLSConfigServer(utils.Certificate{CA: "./testcert/ca.pem", Key: "./testcert/server.key", Cert: "./testcert/server.pem"})
+
+	tlssvr, err := goutils.NewTLSConfigServer(goutils.Certificate{CA: "./testcert/ca.pem", Key: "./testcert/server.key", Cert: "./testcert/server.pem"})
 	assert.NoError(t, err)
 	assert.NotNil(t, tlssvr)
 	ms := httptest.NewTLSServer(gohttp.HandlerFunc(func(w gohttp.ResponseWriter, r *gohttp.Request) {
 		if r.URL.Path == "/v1/sync/report" {
-			w.Write(data1)
+			_, _ = w.Write(data1)
 		} else if r.URL.Path == "/v1/sync/desire" {
-			w.Write(data2)
+			_, _ = w.Write(data2)
 		}
 	}))
 	assert.NotNil(t, ms)
 	defer ms.Close()
 
 	var cfg Config
-	err = utils.UnmarshalYAML(nil, &cfg)
+	err = goutils.UnmarshalYAML(nil, &cfg)
 	assert.NoError(t, err)
 	cfg.HTTPLink.HTTP = http.ClientConfig{
 		Address: ms.URL,
-		Certificate: utils.Certificate{
+		Certificate: goutils.Certificate{
 			CA:                 "./testcert/ca.pem",
 			Key:                "./testcert/client.key",
 			Cert:               "./testcert/client.pem",
@@ -65,8 +73,8 @@ func TestRequest(t *testing.T) {
 		Kind: specv1.MessageReport,
 	}
 	res, err := link.Request(msg)
-	assert.NotNil(t, res)
 	assert.NoError(t, err)
+	assert.NotNil(t, res)
 
 	var desire specv1.Desire
 	err = res.Content.Unmarshal(&desire)
@@ -78,13 +86,25 @@ func TestRequest(t *testing.T) {
 		Kind: specv1.MessageDesire,
 	}
 	res, err = link.Request(msg)
-	assert.NotNil(t, res)
 	assert.NoError(t, err)
+	assert.NotNil(t, res)
 
 	var desireRes specv1.DesireResponse
 	err = res.Content.Unmarshal(&desireRes)
 	assert.NoError(t, err)
 	aRes := desireRes.Values[0].App()
 	assert.Equal(t, aRes.Name, "app1")
-	assert.Equal(t, aRes.Version, "123")
+	assert.Equal(t, aRes.Version, appVersionTemplate)
+
+	err = os.Setenv(appVersionKey, appVersion)
+	assert.NoError(t, err)
+	res, err = utils.RequestWithEnvUnwrapped(link, msg)
+	assert.NoError(t, err)
+	assert.NotNil(t, res)
+
+	err = res.Content.Unmarshal(&desireRes)
+	assert.NoError(t, err)
+	aRes = desireRes.Values[0].App()
+	assert.Equal(t, aRes.Name, "app1")
+	assert.Equal(t, aRes.Version, appVersion)
 }

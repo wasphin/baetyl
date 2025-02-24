@@ -23,7 +23,9 @@ var (
 
 type Link interface {
 	State() *v1.Message
+	// Receive receives message from cloud asynchronously
 	Receive() (<-chan *v1.Message, <-chan error)
+	// Request sends message to cloud synchronously
 	Request(msg *v1.Message) (*v1.Message, error)
 	Send(msg *v1.Message) error
 	IsAsyncSupported() bool
