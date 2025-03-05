@@ -133,7 +133,7 @@ func downloadObject(cli *http.Client, obj *specv1.ConfigurationObject, dir, name
 		}
 	}
 	if resp.StatusCode != gohttp.StatusOK {
-		return errors.Errorf("failed to download config object (%s): [%d] %s", name, resp.StatusCode, resp.Status)
+		return errors.Errorf("failed to download config object (%s) url (%s): [%d] %s", name, obj.URL, resp.StatusCode, resp.Status)
 	}
 	defer resp.Body.Close()
 	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0755)
