@@ -290,6 +290,7 @@ func (k *kubeImpl) collectInstanceStats(ns, appName string, qps map[string]inter
 	for _, initStatus := range pod.Status.InitContainerStatuses {
 		containerInfo := specv1.ContainerInfo{Name: initStatus.Name}
 		containerInfo.State, containerInfo.Reason = getContainerStatus(&initStatus)
+		containerInfo.Image = initStatus.Image
 		stats.InitContainers = append(stats.InitContainers, containerInfo)
 	}
 
@@ -327,6 +328,7 @@ func (k *kubeImpl) collectInstanceStats(ns, appName string, qps map[string]inter
 		if metrics, ok := metricsStatus[containerStatus.Name]; ok {
 			containerInfo.Usage = metrics.Usage
 		}
+		containerInfo.Image = containerStatus.Image
 		stats.Containers = append(stats.Containers, containerInfo)
 	}
 
