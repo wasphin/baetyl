@@ -872,6 +872,7 @@ func (impl *nativeImpl) RPCApp(url string, req *v1.RPCRequest) (*v1.RPCResponse,
 	ops := gHTTP.NewClientOptions()
 	ops.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 	cli := gHTTP.NewClient(ops)
+	defer cli.Close()
 	impl.log.Debug("rpc http start", log.Any("url", url), log.Any("method", req.Method))
 
 	var buf []byte

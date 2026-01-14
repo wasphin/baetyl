@@ -29,6 +29,9 @@ type httpLink struct {
 }
 
 func (l *httpLink) Close() error {
+	if l.http != nil {
+		l.http.Close()
+	}
 	return nil
 }
 

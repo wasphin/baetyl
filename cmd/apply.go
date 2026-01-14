@@ -86,6 +86,7 @@ func apply() {
 		ops.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	cli := http.NewClient(ops)
+	defer cli.Close()
 
 	if isValidUrl(file) {
 		data, err = cli.GetJSON(file)

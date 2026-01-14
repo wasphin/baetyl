@@ -230,6 +230,9 @@ func (s *sync) Close() {
 	}
 	// reset tomb for further use
 	s.tomb = goutils.Tomb{}
+	if s.download != nil {
+		s.download.Close()
+	}
 }
 
 func (s *sync) reportAsync(r v1.Report) error {

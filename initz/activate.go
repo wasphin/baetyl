@@ -111,6 +111,7 @@ func (active *Activate) Close() {
 	}
 	active.tomb.Kill(nil)
 	_ = active.tomb.Wait()
+	active.http.Close()
 }
 
 func (active *Activate) WaitAndClose() {

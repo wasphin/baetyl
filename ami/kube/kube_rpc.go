@@ -17,6 +17,7 @@ func (k *kubeImpl) RPCApp(url string, req *specv1.RPCRequest) (*specv1.RPCRespon
 	ops := http.NewClientOptions()
 	ops.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 	cli := http.NewClient(ops)
+	defer cli.Close()
 	k.log.Debug("rpc http start", log.Any("url", url), log.Any("method", req.Method))
 
 	var buf []byte
