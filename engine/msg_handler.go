@@ -14,6 +14,7 @@ import (
 	"github.com/baetyl/baetyl/v2/ami"
 	"github.com/baetyl/baetyl/v2/chain"
 	"github.com/baetyl/baetyl/v2/eventx"
+	webproxy "github.com/baetyl/baetyl/v2/proxy"
 	"github.com/baetyl/baetyl/v2/sync"
 )
 
@@ -93,6 +94,11 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 			}
 		case v1.MessageCommandDescribe:
 			err := h.describe(key, m)
+			if err != nil {
+				return errors.Trace(err)
+			}
+		case v1.MessageCommandProxy:
+			err := h.proxy(key, m)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -388,6 +394,14 @@ func (h *handlerDownside) describe(key string, m *v1.Message) error {
 		Content: v1.LazyValue{Value: []byte(res)},
 	}
 	err = h.pb.Publish(sync.TopicUpside, response)
+	if err != nil {
+		h.log.Error("failed to publish message", log.Any("topic", sync.TopicUpside), log.Any("chain name", key), log.Error(err))
+	}
+	return nil
+}
+
+func (h *handlerDownside) proxy(key string, m *v1.Message) error {
+	err := h.pb.Publish(webproxy.TopicProxy, m)
 	if err != nil {
 		h.log.Error("failed to publish message", log.Any("topic", sync.TopicUpside), log.Any("chain name", key), log.Error(err))
 	}

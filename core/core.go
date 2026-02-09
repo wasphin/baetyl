@@ -4,6 +4,7 @@ import (
 	"github.com/baetyl/baetyl-go/v2/context"
 	"github.com/baetyl/baetyl-go/v2/errors"
 	"github.com/baetyl/baetyl-go/v2/http"
+	webproxy "github.com/baetyl/baetyl/v2/proxy"
 	routing "github.com/qiangxue/fasthttp-routing"
 	bh "github.com/timshannon/bolthold"
 	"github.com/valyala/fasthttp"
@@ -30,6 +31,7 @@ type Core struct {
 	syn sync.Sync
 	svr *http.Server
 	evt eventx.EventX
+	wp  *webproxy.ProxyManager
 }
 
 // NewCore creates a new core
@@ -69,6 +71,14 @@ func NewCore(ctx context.Context, cfg config.Config) (*Core, error) {
 		}
 		c.evt.Start()
 	}
+
+	c.wp, err = webproxy.NewProxyManager(ctx, c.syn.Pubsub())
+	if err != nil {
+		return nil, errors.Trace(err)
+	} else {
+		_ = c.wp.Start()
+	}
+
 	return c, nil
 }
 

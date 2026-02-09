@@ -45,6 +45,7 @@ type Sync interface {
 	Report(r v1.Report) (v1.Desire, error)
 	SyncResource(v1.AppInfo) error
 	SyncApps(infos []v1.AppInfo) (map[string]v1.Application, error)
+	Pubsub() plugin.Pubsub
 }
 
 // Sync sync shadow and resources with cloud
@@ -84,6 +85,10 @@ func NewSync(cfg config.Config, store *bh.Store, nod node.Node) (Sync, error) {
 		log:      log.With(log.Any("core", "sync")),
 	}
 	return s, nil
+}
+
+func (s *sync) Pubsub() plugin.Pubsub {
+	return s.pb
 }
 
 func (s *sync) Start() {
