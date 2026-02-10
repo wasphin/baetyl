@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	MsgTimeout = time.Minute * 10
-	Localhost  = "127.0.0.1"
+	MsgTimeout   = time.Minute * 10
+	ProxyTimeout = time.Minute * 1
+	Localhost    = "127.0.0.1"
 
 	ExitCmd = "exit\n"
 )
@@ -34,6 +35,7 @@ type Chain interface {
 	Debug() error
 	ViewLogs(*ami.LogsOptions) error
 	Cancel() error
+	Proxy() error
 	io.Closer
 }
 
@@ -60,7 +62,7 @@ type chain struct {
 	cancel       context.CancelFunc
 }
 
-func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOptions bool) (Chain, error) {
+func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOptions bool, isProxy bool) (Chain, error) {
 	pl, err := v2plugin.GetPlugin(cfg.Plugin.Pubsub)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -102,60 +104,61 @@ func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOp
 	if !ok {
 		c.log.Debug("no container specified")
 	}
+	if !isProxy {
+		c.mode = v2context.RunMode()
+		cmd := []string{
+			"sh",
+			"-c",
+			"/bin/sh",
+		}
+		var opt ami.DebugOptions
+		// default set kube debug option
+		opt.KubeDebugOptions = ami.KubeDebugOptions{
+			Namespace: namespace,
+			Name:      name,
+			Container: container,
+			Command:   cmd,
+		}
 
-	c.mode = v2context.RunMode()
-	cmd := []string{
-		"sh",
-		"-c",
-		"/bin/sh",
+		// kube mode container debugging do not required 'ip',
+		// we can use ip to detect whether we are running native remote commands.
+		ip, kubeNativeDebugMode := data["ip"]
+		c.log.Debug("link info", log.Any("data:", data))
+		// if host is specified, this is a websocket link. if native mode, use ssh.
+		if address, ok := data["host"]; ok {
+			path, ok := data["path"]
+			if !ok {
+				return nil, ErrParseData
+			}
+			opt.WebsocketOptions = ami.WebsocketOptions{
+				Host: address,
+				Path: path,
+			}
+		} else if (c.mode == v2context.RunModeNative || kubeNativeDebugMode) && needNativeOptions {
+			port, ok := data["port"]
+			if !ok {
+				return nil, ErrParseData
+			}
+			userName, ok := data["userName"]
+			if !ok {
+				return nil, ErrParseData
+			}
+			password, ok := data["password"]
+			if !ok {
+				return nil, ErrParseData
+			}
+			if !kubeNativeDebugMode {
+				ip = Localhost
+			}
+			opt.NativeDebugOptions = ami.NativeDebugOptions{
+				IP:       ip,
+				Port:     port,
+				Username: userName,
+				Password: password,
+			}
+		}
+		c.debugOptions = &opt
 	}
-	var opt ami.DebugOptions
-	// default set kube debug option
-	opt.KubeDebugOptions = ami.KubeDebugOptions{
-		Namespace: namespace,
-		Name:      name,
-		Container: container,
-		Command:   cmd,
-	}
-
-	// kube mode container debugging do not required 'ip',
-	// we can use ip to detect whether we are running native remote commands.
-	ip, kubeNativeDebugMode := data["ip"]
-	c.log.Debug("link info", log.Any("data:", data))
-	// if host is specified, this is a websocket link. if native mode, use ssh.
-	if address, ok := data["host"]; ok {
-		path, ok := data["path"]
-		if !ok {
-			return nil, ErrParseData
-		}
-		opt.WebsocketOptions = ami.WebsocketOptions{
-			Host: address,
-			Path: path,
-		}
-	} else if (c.mode == v2context.RunModeNative || kubeNativeDebugMode) && needNativeOptions {
-		port, ok := data["port"]
-		if !ok {
-			return nil, ErrParseData
-		}
-		userName, ok := data["userName"]
-		if !ok {
-			return nil, ErrParseData
-		}
-		password, ok := data["password"]
-		if !ok {
-			return nil, ErrParseData
-		}
-		if !kubeNativeDebugMode {
-			ip = Localhost
-		}
-		opt.NativeDebugOptions = ami.NativeDebugOptions{
-			IP:       ip,
-			Port:     port,
-			Username: userName,
-			Password: password,
-		}
-	}
-	c.debugOptions = &opt
 	c.downside = fmt.Sprintf("%s_%s_%s_%s_%s", namespace, name, container, token, "down")
 
 	c.log.Debug("chain sub downside topic", log.Any("topic", c.downside))
