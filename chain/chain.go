@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	MsgTimeout = time.Minute * 10
-	Localhost  = "127.0.0.1"
+	MsgTimeout   = time.Minute * 10
+	ProxyTimeout = time.Minute * 1
+	Localhost    = "127.0.0.1"
 
 	ExitCmd = "exit\n"
 )
@@ -33,6 +34,7 @@ const (
 type Chain interface {
 	Debug() error
 	ViewLogs(*ami.LogsOptions) error
+	Proxy() error
 	Cancel() error
 	io.Closer
 }
@@ -60,7 +62,7 @@ type chain struct {
 	cancel       context.CancelFunc
 }
 
-func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOptions bool) (Chain, error) {
+func newChainBase(cfg config.Config, a ami.AMI, data map[string]string) (*chain, error) {
 	pl, err := v2plugin.GetPlugin(cfg.Plugin.Pubsub)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -103,6 +105,22 @@ func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOp
 		c.log.Debug("no container specified")
 	}
 
+	c.downside = fmt.Sprintf("%s_%s_%s_%s_%s", namespace, name, container, token, "down")
+
+	c.log.Debug("chain sub downside topic", log.Any("topic", c.downside))
+	c.subChan, err = c.pb.Subscribe(c.downside)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return c, nil
+}
+
+func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOptions bool) (Chain, error) {
+	c, err := newChainBase(cfg, a, data)
+	if err != nil {
+		return nil, err
+	}
+
 	c.mode = v2context.RunMode()
 	cmd := []string{
 		"sh",
@@ -110,6 +128,11 @@ func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOp
 		"/bin/sh",
 	}
 	var opt ami.DebugOptions
+
+	name := data["name"]
+	namespace := data["namespace"]
+	container := data["container"]
+
 	// default set kube debug option
 	opt.KubeDebugOptions = ami.KubeDebugOptions{
 		Namespace: namespace,
@@ -156,12 +179,13 @@ func NewChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOp
 		}
 	}
 	c.debugOptions = &opt
-	c.downside = fmt.Sprintf("%s_%s_%s_%s_%s", namespace, name, container, token, "down")
+	return c, nil
+}
 
-	c.log.Debug("chain sub downside topic", log.Any("topic", c.downside))
-	c.subChan, err = c.pb.Subscribe(c.downside)
+func NewProxyChain(cfg config.Config, a ami.AMI, data map[string]string, needNativeOptions bool) (Chain, error) {
+	c, err := newChainBase(cfg, a, data)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return nil, err
 	}
 	return c, nil
 }
