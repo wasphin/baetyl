@@ -110,6 +110,11 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 			h.publishFailedMsg(key, ErrPublishDownsideChain, m)
 			return errors.Trace(err)
 		}
+	case v1.MessageCommandProxy:
+		err := h.proxy(key, m)
+		if err != nil {
+			return errors.Trace(err)
+		}
 	default:
 		h.log.Warn("remote debug message kind not support", log.Any("msg", m))
 	}
@@ -391,6 +396,32 @@ func (h *handlerDownside) describe(key string, m *v1.Message) error {
 	if err != nil {
 		h.log.Error("failed to publish message", log.Any("topic", sync.TopicUpside), log.Any("chain name", key), log.Error(err))
 	}
+	return nil
+}
+
+func (h *handlerDownside) proxy(key string, m *v1.Message) error {
+	old, ok := h.chains.Load(key)
+	if ok {
+		err := old.(chain.Chain).Close()
+		if err != nil {
+			h.log.Warn("failed to close old chain", log.Any("chain", key))
+		}
+		h.chains.Delete(key)
+		h.log.Debug("close chain", log.Any("chain name", key))
+	}
+	h.log.Debug("new proxy chain", log.Any("chain name", key))
+
+	c, err := chain.NewProxyChain(h.cfg, h.ami, m.Metadata, false)
+	if err != nil {
+		h.publishFailedMsg(key, ErrCreateChain, m)
+		return errors.Trace(err)
+	}
+	err = c.Proxy()
+	if err != nil {
+		h.publishFailedMsg(key, ErrExecData, m)
+		return errors.Trace(err)
+	}
+	h.chains.Store(key, c)
 	return nil
 }
 
