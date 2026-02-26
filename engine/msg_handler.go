@@ -96,6 +96,11 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 			if err != nil {
 				return errors.Trace(err)
 			}
+		case v1.MessageCommandProxy:
+			err := h.proxy(key, m)
+			if err != nil {
+				return errors.Trace(err)
+			}
 		default:
 			h.log.Debug("unknown command", log.Any("cmd", m.Metadata["cmd"]))
 		}
@@ -108,11 +113,6 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 		if err != nil {
 			h.log.Error(ErrPublishDownsideChain, log.Error(errors.Trace(err)))
 			h.publishFailedMsg(key, ErrPublishDownsideChain, m)
-			return errors.Trace(err)
-		}
-	case v1.MessageCommandProxy:
-		err := h.proxy(key, m)
-		if err != nil {
 			return errors.Trace(err)
 		}
 	default:
