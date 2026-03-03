@@ -429,6 +429,7 @@ func (h *handlerDownside) proxy(key string, m *v1.Message) error {
 			"success": "true",
 			"token":   m.Metadata["token"],
 		},
+		Content: v1.LazyValue{},
 	}
 	err = h.pb.Publish(sync.TopicUpside, response)
 	if err != nil {

@@ -96,6 +96,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 				}
 
 				if n > 0 {
+					c.log.Info("read data from target", log.Any("n", n))
 					_, err = pipe.OutWriter.Write(buf[:n])
 					if err != nil {
 						c.log.Error("failed to write to pipe", log.Error(err))
@@ -125,6 +126,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 				}
 
 				if n > 0 {
+					c.log.Info("write data to target", log.Any("n", n))
 					_, err = conn.Write(buf[:n])
 					if err != nil {
 						c.log.Error("failed to write to target", log.Error(err))
