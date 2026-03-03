@@ -422,6 +422,18 @@ func (h *handlerDownside) proxy(key string, m *v1.Message) error {
 		return errors.Trace(err)
 	}
 	h.chains.Store(key, c)
+
+	response := &v1.Message{
+		Kind: v1.MessageData,
+		Metadata: map[string]string{
+			"success": "true",
+			"token":   m.Metadata["token"],
+		},
+	}
+	err = h.pb.Publish(sync.TopicUpside, response)
+	if err != nil {
+		h.log.Error("failed to publish message", log.Any("topic", sync.TopicUpside), log.Any("chain name", key), log.Error(err))
+	}
 	return nil
 }
 
