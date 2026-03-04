@@ -9,6 +9,7 @@ import (
 	"github.com/baetyl/baetyl-go/v2/log"
 	"github.com/baetyl/baetyl-go/v2/pubsub"
 	v1 "github.com/baetyl/baetyl-go/v2/spec/v1"
+	utils2 "github.com/baetyl/baetyl/v2/utils"
 
 	"github.com/baetyl/baetyl/v2/ami"
 )
@@ -80,7 +81,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 	// 从目标服务读取数据，写入管道（发送到云端）
 	go func() {
-		buf := make([]byte, 16*1024) // 16KB 缓冲区
+		buf := make([]byte, 8*utils2.KiByte) // 8KB 缓冲区
 		for {
 			select {
 			case <-pipe.Ctx.Done():
@@ -111,7 +112,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 	// 从管道读取数据（来自云端），写入目标服务
 	go func() {
-		buf := make([]byte, 16*1024) // 16KB 缓冲区
+		buf := make([]byte, 8*utils2.KiByte) // 8KB 缓冲区
 		for {
 			select {
 			case <-pipe.Ctx.Done():
