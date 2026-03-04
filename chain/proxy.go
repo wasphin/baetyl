@@ -80,7 +80,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 	// 从目标服务读取数据，写入管道（发送到云端）
 	go func() {
-		buf := make([]byte, 32*1024) // 32KB 缓冲区
+		buf := make([]byte, 16*1024) // 16KB 缓冲区
 		for {
 			select {
 			case <-pipe.Ctx.Done():
@@ -111,7 +111,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 	// 从管道读取数据（来自云端），写入目标服务
 	go func() {
-		buf := make([]byte, 32*1024) // 32KB 缓冲区
+		buf := make([]byte, 16*1024) // 16KB 缓冲区
 		for {
 			select {
 			case <-pipe.Ctx.Done():
