@@ -161,11 +161,21 @@ func (pt *PerformanceTracker) Finish(token string) string {
 			continue
 		}
 		durMs := float64(s.EndTime.Sub(s.StartTime).Nanoseconds()) / 1e6
-		stageDetails[s.Name+"_ms"] = durMs
+		stageDetails[s.Name] = struct {
+			StartMs    float64 `json:"start"`
+			EndMs      float64 `json:"end"`
+			DurationMs float64 `json:"duration"`
+			Percentage float64 `json:"percentage"`
+		}{
+			StartMs:    float64(s.StartTime.Sub(record.StartTime).Nanoseconds()) / 1e6,
+			EndMs:      float64(s.EndTime.Sub(record.StartTime).Nanoseconds()) / 1e6,
+			DurationMs: durMs,
+			Percentage: durMs / float64(time.Since(record.StartTime).Nanoseconds()) / 1e6,
+		}
 	}
 
 	pt.log.Info("performance summary",
-		log.Any("total_ms", float64(time.Since(record.StartTime).Nanoseconds())/1e6),
+		log.Any("total", float64(time.Since(record.StartTime).Nanoseconds())/1e6),
 		log.Any("stages", stageDetails),
 	)
 
