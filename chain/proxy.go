@@ -1,9 +1,11 @@
 package chain
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/baetyl/baetyl-go/v2/errors"
 	"github.com/baetyl/baetyl-go/v2/log"
@@ -81,9 +83,19 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 	errChan := make(chan error, 2)
 	pt := perf.Default()
 
+	// 设置 TCP 连接参数
+	tcpConn := conn.(*net.TCPConn)
+	tcpConn.SetReadBuffer(64 * 1024)  // 64KB 读缓冲区
+	tcpConn.SetWriteBuffer(64 * 1024) // 64KB 写缓冲区
+
+	// 使用缓冲 Writer 写入管道
+	pipeWriter := bufio.NewWriterSize(pipe.OutWriter, 32*1024) // 32KB 缓冲
+
 	// 从目标服务读取数据，写入管道（发送到云端）
 	go func() {
 		buf := make([]byte, utils2.ReadBuff)
+		defer pipeWriter.Flush() // 确保退出时刷新缓冲区
+
 		for {
 			select {
 			case <-pipe.Ctx.Done():
@@ -91,9 +103,22 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 			default:
 				// [perf] 阶段8: proxy_read_target_write_pipe
 				pt.StartStage(c.token, perf.StageProxyReadAndWritePipe)
+
+				// 设置读超时，避免无限阻塞
+				if err := tcpConn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+					c.log.Warn("failed to set read deadline", log.Error(err))
+				}
+
 				n, err := conn.Read(buf)
 				if err != nil {
 					pt.EndStage(c.token, perf.StageProxyReadAndWritePipe)
+
+					// 判断是否为超时错误
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						c.log.Warn("read from target timeout (30s), may be idle connection")
+						return // 超时退出，避免资源泄漏
+					}
+
 					if err != io.EOF {
 						c.log.Error("failed to read from target", log.Error(err))
 					}
@@ -101,8 +126,12 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 					return
 				}
 
+				// 清除读超时
+				tcpConn.SetReadDeadline(time.Time{})
+
 				if n > 0 {
-					_, err = pipe.OutWriter.Write(buf[:n])
+					// 使用缓冲 Writer 写入管道
+					_, err = pipeWriter.Write(buf[:n])
 					pt.EndStage(c.token, perf.StageProxyReadAndWritePipe)
 					if err != nil {
 						c.log.Error("failed to write to pipe", log.Error(err))
@@ -116,9 +145,14 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 		}
 	}()
 
+	// 使用缓冲 Writer 减少系统调用
+	writer := bufio.NewWriterSize(tcpConn, 32*1024) // 32KB 应用层缓冲
+
 	// 从管道读取数据（来自云端），写入目标服务
 	go func() {
 		buf := make([]byte, utils2.ReadBuff)
+		defer writer.Flush() // 确保退出时刷新缓冲区
+
 		for {
 			select {
 			case <-pipe.Ctx.Done():
@@ -137,13 +171,27 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 				}
 
 				if n > 0 {
-					_, err = conn.Write(buf[:n])
+					// 设置写超时，避免无限阻塞
+					if err := tcpConn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+						c.log.Warn("failed to set write deadline", log.Error(err))
+					}
+
+					// 使用缓冲 Writer 写入
+					_, err = writer.Write(buf[:n])
 					pt.EndStage(c.token, perf.StageProxyWriteTarget)
 					if err != nil {
-						c.log.Error("failed to write to target", log.Error(err))
+						// 判断是否为超时错误
+						if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+							c.log.Error("write to target timeout (5s)", log.Error(err))
+						} else {
+							c.log.Error("failed to write to target", log.Error(err))
+						}
 						errChan <- err
 						return
 					}
+
+					// 清除写超时
+					tcpConn.SetWriteDeadline(time.Time{})
 				} else {
 					pt.EndStage(c.token, perf.StageProxyWriteTarget)
 				}
