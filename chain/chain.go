@@ -55,6 +55,7 @@ type chain struct {
 	logOpt       *ami.LogsOptions
 	pb           plugin.Pubsub
 	subChan      <-chan interface{}
+	dataCh       <-chan *v1.Message // direct channel, bypass pubsub for proxy
 	processor    pubsub.Processor
 	pipe         ami.Pipe
 	tomb         utils.Tomb
@@ -203,6 +204,52 @@ func NewProxyChain(cfg config.Config, a ami.AMI, data map[string]string, needNat
 	return c, nil
 }
 
+// NewProxyChainDirect creates a proxy chain that receives data directly from dataCh,
+// bypassing the pubsub mechanism to reduce latency.
+func NewProxyChainDirect(cfg config.Config, a ami.AMI, data map[string]string, dataCh <-chan *v1.Message) (Chain, error) {
+	pl, err := v2plugin.GetPlugin(cfg.Plugin.Pubsub)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	pipe := ami.Pipe{}
+	pipe.InReader, pipe.InWriter = io.Pipe()
+	pipe.OutReader, pipe.OutWriter = io.Pipe()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	pipe.Ctx = ctx
+	pipe.Cancel = cancel
+	c := &chain{
+		ami:    a,
+		data:   data,
+		upside: sync.TopicUpside,
+		pb:     pl.(plugin.Pubsub),
+		pipe:   pipe,
+		ctx:    ctx,
+		cancel: cancel,
+		dataCh: dataCh,
+	}
+
+	token, ok := data["token"]
+	if !ok {
+		return nil, ErrParseData
+	}
+	c.token = token
+	c.log = log.L().With(log.Any("chain", token))
+
+	name := data["name"]
+	namespace := data["namespace"]
+	container := data["container"]
+	var opt ami.DebugOptions
+	opt.KubeDebugOptions = ami.KubeDebugOptions{
+		Namespace: namespace,
+		Name:      name,
+		Container: container,
+	}
+	c.debugOptions = &opt
+	return c, nil
+}
+
 // Cancel Stop ssh with exit cmd and stop websocket with ctx.cancel()
 func (c *chain) Cancel() error {
 	c.log.Info("connection cancel", log.Any("options", c.debugOptions))
@@ -224,7 +271,9 @@ func (c *chain) Cancel() error {
 }
 
 func (c *chain) Close() error {
-	c.processor.Close()
+	if c.processor != nil {
+		c.processor.Close()
+	}
 	c.cancel()
 	err := c.pipe.InWriter.Close()
 	if err != nil {
@@ -235,11 +284,13 @@ func (c *chain) Close() error {
 		c.log.Warn("failed to close chain out writer", log.Error(err))
 	}
 
-	err = c.pb.Unsubscribe(c.downside, c.subChan)
-	if err != nil {
-		c.log.Warn("failed to unsubscribe chain downside topic", log.Any("topic", c.downside), log.Error(err))
+	if c.subChan != nil {
+		err = c.pb.Unsubscribe(c.downside, c.subChan)
+		if err != nil {
+			c.log.Warn("failed to unsubscribe chain downside topic", log.Any("topic", c.downside), log.Error(err))
+		}
+		c.log.Debug("close", log.Any("unsubscribe topic", c.downside))
 	}
-	c.log.Debug("close", log.Any("unsubscribe topic", c.downside))
 	return nil
 }
 

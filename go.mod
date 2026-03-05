@@ -3,7 +3,7 @@ module github.com/baetyl/baetyl/v2
 go 1.18
 
 replace (
-	github.com/baetyl/baetyl-go/v2 => github.com/wasphin/baetyl-go/v2 v2.2.4-0.20260305082640-abecd734e5a7
+	github.com/baetyl/baetyl-go/v2 => github.com/wasphin/baetyl-go/v2 v2.2.4-0.20260305085253-e4589b13395f
 	github.com/kardianos/service => github.com/baetyl/service v1.2.3-0.20221205070704-85cb455aa3a3
 )
 

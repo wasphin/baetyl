@@ -120,14 +120,24 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 		if token != "" {
 			perf.Default().StartStage(token, perf.StageEngineToChainDownside)
 		}
-		err := h.pb.Publish(downside, m)
-		if token != "" {
-			perf.Default().EndStage(token, perf.StageEngineToChainDownside)
-		}
-		if err != nil {
-			h.log.Error(ErrPublishDownsideChain, log.Error(errors.Trace(err)))
-			h.publishFailedMsg(key, ErrPublishDownsideChain, m)
-			return errors.Trace(err)
+		// Direct channel mode for proxy: bypass pubsub
+		if ch, ok := h.proxyDataChs.Load(key); ok {
+			select {
+			case ch.(chan *v1.Message) <- m:
+			default:
+				h.log.Warn("proxy data channel full, dropping message", log.Any("key", key))
+			}
+			if token != "" {
+				perf.Default().EndStage(token, perf.StageEngineToChainDownside)
+			}
+		} else {
+			// Fallback: legacy pubsub mode (debug/logs chains)
+			err := h.pb.Publish(downside, m)
+			if err != nil {
+				h.log.Error(ErrPublishDownsideChain, log.Error(errors.Trace(err)))
+				h.publishFailedMsg(key, ErrPublishDownsideChain, m)
+				return errors.Trace(err)
+			}
 		}
 	default:
 		h.log.Warn("remote debug message kind not support", log.Any("msg", m))
@@ -229,6 +239,10 @@ func (h *handlerDownside) disconnect(key string, m *v1.Message) error {
 	c, ok := h.chains.Load(key)
 	if !ok {
 		return nil
+	}
+	// Close direct data channel if exists
+	if ch, ok := h.proxyDataChs.LoadAndDelete(key); ok {
+		close(ch.(chan *v1.Message))
 	}
 	h.sendExit(key)
 	err := c.(chain.Chain).Close()
@@ -433,19 +447,28 @@ func (h *handlerDownside) proxy(key string, m *v1.Message) error {
 		h.chains.Delete(key)
 		h.log.Debug("close chain", log.Any("chain name", key))
 	}
+	// Clean up old data channel
+	if oldCh, ok := h.proxyDataChs.LoadAndDelete(key); ok {
+		close(oldCh.(chan *v1.Message))
+	}
 	h.log.Debug("new proxy chain", log.Any("chain name", key))
 
-	c, err := chain.NewProxyChain(h.cfg, h.ami, m.Metadata, false)
+	// Create direct data channel, bypass pubsub
+	dataCh := make(chan *v1.Message, 128)
+	c, err := chain.NewProxyChainDirect(h.cfg, h.ami, m.Metadata, dataCh)
 	if err != nil {
+		close(dataCh)
 		h.publishFailedMsg(key, ErrCreateChain, m)
 		return errors.Trace(err)
 	}
 	err = c.Proxy()
 	if err != nil {
+		close(dataCh)
 		h.publishFailedMsg(key, ErrExecData, m)
 		return errors.Trace(err)
 	}
 	h.chains.Store(key, c)
+	h.proxyDataChs.Store(key, dataCh)
 
 	response := &v1.Message{
 		Kind: v1.MessageData,
