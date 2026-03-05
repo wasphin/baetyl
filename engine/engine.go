@@ -66,7 +66,6 @@ type engineImpl struct {
 	downsideChan    <-chan interface{}
 	downsideProcess pubsub.Processor
 	chains          gosync.Map
-	proxyDataChs    gosync.Map
 	tomb            v2utils.Tomb
 }
 
