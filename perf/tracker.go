@@ -1,8 +1,7 @@
 package perf
 
 import (
-	"fmt"
-	"strings"
+	"encoding/json"
 	gosync "sync"
 	"time"
 
@@ -158,28 +157,33 @@ func (pt *PerformanceTracker) Finish(token string) string {
 
 	totalMs := float64(time.Since(record.StartTime).Nanoseconds()) / 1e6
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\n===== Performance Report [token=%s] =====\n", token))
-	sb.WriteString(fmt.Sprintf("Total elapsed: %.3f ms\n", totalMs))
-	sb.WriteString(fmt.Sprintf("%-40s %12s %12s %12s\n", "Stage", "Start(ms)", "End(ms)", "Duration(ms)"))
-	sb.WriteString(strings.Repeat("-", 80) + "\n")
-
+	// 构建 stages map，将 stage 名称转换为下划线格式并以 _ms 结尾
+	stages := make(map[string]float64)
 	for _, s := range record.stages {
-		startMs := float64(s.StartTime.Sub(record.StartTime).Nanoseconds()) / 1e6
-		var endMs, durMs float64
-		if !s.EndTime.IsZero() {
-			endMs = float64(s.EndTime.Sub(record.StartTime).Nanoseconds()) / 1e6
-			durMs = float64(s.EndTime.Sub(s.StartTime).Nanoseconds()) / 1e6
-		}
 		if s.EndTime.IsZero() {
-			sb.WriteString(fmt.Sprintf("%-40s %12.3f %12s %12s\n", s.Name, startMs, "N/A", "N/A"))
-		} else {
-			sb.WriteString(fmt.Sprintf("%-40s %12.3f %12.3f %12.3f\n", s.Name, startMs, endMs, durMs))
+			continue
 		}
+		durMs := float64(s.EndTime.Sub(s.StartTime).Nanoseconds()) / 1e6
+		// 将 stage 名称转换为 lowercase 并用下划线替换连字符，最后加上 _ms 后缀
+		stageName := s.Name + "_ms"
+		stages[stageName] = durMs
 	}
-	sb.WriteString(strings.Repeat("=", 80) + "\n")
 
-	report := sb.String()
+	// 构建 JSON 输出
+	result := map[string]interface{}{
+		"perf_tracker": token,
+		"total_ms":     int(totalMs),
+		"stages":       stages,
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		pt.log.Error("failed to marshal performance summary", log.Any("error", err))
+		pt.records.Delete(token)
+		return ""
+	}
+
+	report := "performance summary\t" + string(jsonBytes)
 	pt.log.Info(report)
 
 	pt.records.Delete(token)
