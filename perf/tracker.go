@@ -1,7 +1,6 @@
 package perf
 
 import (
-	"encoding/json"
 	gosync "sync"
 	"time"
 
@@ -155,39 +154,23 @@ func (pt *PerformanceTracker) Finish(token string) string {
 	record.mu.Lock()
 	defer record.mu.Unlock()
 
-	totalMs := float64(time.Since(record.StartTime).Nanoseconds()) / 1e6
-
-	// 构建 stages map，将 stage 名称转换为下划线格式并以 _ms 结尾
-	stages := make(map[string]float64)
+	// 计算各阶段耗时占比
+	stageDetails := make(map[string]interface{})
 	for _, s := range record.stages {
 		if s.EndTime.IsZero() {
 			continue
 		}
 		durMs := float64(s.EndTime.Sub(s.StartTime).Nanoseconds()) / 1e6
-		// 将 stage 名称转换为 lowercase 并用下划线替换连字符，最后加上 _ms 后缀
-		stageName := s.Name + "_ms"
-		stages[stageName] = durMs
+		stageDetails[s.Name+"_ms"] = durMs
 	}
 
-	// 构建 JSON 输出
-	result := map[string]interface{}{
-		"perf_tracker": token,
-		"total_ms":     int(totalMs),
-		"stages":       stages,
-	}
-
-	jsonBytes, err := json.Marshal(result)
-	if err != nil {
-		pt.log.Error("failed to marshal performance summary", log.Any("error", err))
-		pt.records.Delete(token)
-		return ""
-	}
-
-	report := "performance summary\t" + string(jsonBytes)
-	pt.log.Info(report)
+	pt.log.Info("performance summary",
+		log.Any("total_ms", float64(time.Since(record.StartTime).Nanoseconds())/1e6),
+		log.Any("stages", stageDetails),
+	)
 
 	pt.records.Delete(token)
-	return report
+	return ""
 }
 
 // Summary 获取某个 token 的当前阶段摘要（不结束追踪）
