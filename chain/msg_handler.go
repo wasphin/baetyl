@@ -7,6 +7,7 @@ import (
 	"github.com/baetyl/baetyl-go/v2/log"
 	v1 "github.com/baetyl/baetyl-go/v2/spec/v1"
 
+	"github.com/baetyl/baetyl/v2/perf"
 	"github.com/baetyl/baetyl/v2/sync"
 )
 
@@ -19,9 +20,13 @@ func (h *chainHandler) OnMessage(msg interface{}) error {
 	m := msg.(*v1.Message)
 	switch m.Kind {
 	case v1.MessageData:
+		// [perf] 阶段6: chain_handler_write_pipe
+		perf.Default().StartStage(h.token, perf.StageChainHandlerWrite)
+
 		var cmd []byte
 		err := m.Content.Unmarshal(&cmd)
 		if err != nil {
+			perf.Default().EndStage(h.token, perf.StageChainHandlerWrite)
 			h.log.Error("failed to unmarshal data message", log.Error(err))
 			errPub := h.pb.Publish(h.upside, &v1.Message{
 				Kind: v1.MessageData,
@@ -37,9 +42,11 @@ func (h *chainHandler) OnMessage(msg interface{}) error {
 			return errors.Trace(err)
 		}
 		if bytes.Equal([]byte(ExitCmd), cmd) {
+			perf.Default().EndStage(h.token, perf.StageChainHandlerWrite)
 			return h.onExitMessage()
 		}
 		_, err = h.pipe.InWriter.Write(cmd)
+		perf.Default().EndStage(h.token, perf.StageChainHandlerWrite)
 		if err != nil {
 			h.log.Error("failed to write debug command", log.Error(err))
 			errPub := h.pb.Publish(h.upside, &v1.Message{

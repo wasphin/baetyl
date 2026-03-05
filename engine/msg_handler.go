@@ -14,6 +14,7 @@ import (
 	"github.com/baetyl/baetyl/v2/ami"
 	"github.com/baetyl/baetyl/v2/chain"
 	"github.com/baetyl/baetyl/v2/eventx"
+	"github.com/baetyl/baetyl/v2/perf"
 	"github.com/baetyl/baetyl/v2/sync"
 )
 
@@ -42,6 +43,12 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 	// Todo : improve, only the core module supports remote debugging
 	if os.Getenv(context.KeySvcName) != v1.BaetylCore {
 		return nil
+	}
+
+	// [perf] 阶段4: engine_downside_route
+	token := m.Metadata["token"]
+	if token != "" {
+		defer perf.Default().TrackStage(token, perf.StageEngineDownsideRoute)()
 	}
 
 	key := fmt.Sprintf("%s_%s_%s_%s", m.Metadata["namespace"], m.Metadata["name"], m.Metadata["container"], m.Metadata["token"])
@@ -109,7 +116,14 @@ func (h *handlerDownside) OnMessage(msg interface{}) error {
 			h.publishFailedMsg(key, ErrGetChain, m)
 			return errors.New(ErrGetChain + key)
 		}
+		// [perf] 阶段5b: engine_to_chain_downside
+		if token != "" {
+			perf.Default().StartStage(token, perf.StageEngineToChainDownside)
+		}
 		err := h.pb.Publish(downside, m)
+		if token != "" {
+			perf.Default().EndStage(token, perf.StageEngineToChainDownside)
+		}
 		if err != nil {
 			h.log.Error(ErrPublishDownsideChain, log.Error(errors.Trace(err)))
 			h.publishFailedMsg(key, ErrPublishDownsideChain, m)
@@ -207,6 +221,11 @@ func (h *handlerDownside) sendExit(key string) {
 }
 
 func (h *handlerDownside) disconnect(key string, m *v1.Message) error {
+	// [perf] 输出性能报告
+	if tkn := m.Metadata["token"]; tkn != "" {
+		perf.Default().Finish(tkn)
+	}
+
 	c, ok := h.chains.Load(key)
 	if !ok {
 		return nil
@@ -400,6 +419,11 @@ func (h *handlerDownside) describe(key string, m *v1.Message) error {
 }
 
 func (h *handlerDownside) proxy(key string, m *v1.Message) error {
+	// [perf] 阶段5a: proxy_chain_create
+	if tkn := m.Metadata["token"]; tkn != "" {
+		defer perf.Default().TrackStage(tkn, perf.StageProxyChainCreate)()
+	}
+
 	old, ok := h.chains.Load(key)
 	if ok {
 		err := old.(chain.Chain).Close()

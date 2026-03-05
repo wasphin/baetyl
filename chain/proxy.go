@@ -9,6 +9,7 @@ import (
 	"github.com/baetyl/baetyl-go/v2/log"
 	"github.com/baetyl/baetyl-go/v2/pubsub"
 	v1 "github.com/baetyl/baetyl-go/v2/spec/v1"
+	"github.com/baetyl/baetyl/v2/perf"
 	utils2 "github.com/baetyl/baetyl/v2/utils"
 
 	"github.com/baetyl/baetyl/v2/ami"
@@ -78,6 +79,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 	// 启动两个 goroutine 进行双向数据转发
 	errChan := make(chan error, 2)
+	pt := perf.Default()
 
 	// 从目标服务读取数据，写入管道（发送到云端）
 	go func() {
@@ -87,8 +89,11 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 			case <-pipe.Ctx.Done():
 				return
 			default:
+				// [perf] 阶段8: proxy_read_target_write_pipe
+				pt.StartStage(c.token, perf.StageProxyReadAndWritePipe)
 				n, err := conn.Read(buf)
 				if err != nil {
+					pt.EndStage(c.token, perf.StageProxyReadAndWritePipe)
 					if err != io.EOF {
 						c.log.Error("failed to read from target", log.Error(err))
 					}
@@ -98,11 +103,14 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 				if n > 0 {
 					_, err = pipe.OutWriter.Write(buf[:n])
+					pt.EndStage(c.token, perf.StageProxyReadAndWritePipe)
 					if err != nil {
 						c.log.Error("failed to write to pipe", log.Error(err))
 						errChan <- err
 						return
 					}
+				} else {
+					pt.EndStage(c.token, perf.StageProxyReadAndWritePipe)
 				}
 			}
 		}
@@ -116,8 +124,11 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 			case <-pipe.Ctx.Done():
 				return
 			default:
+				// [perf] 阶段7: proxy_write_to_target
+				pt.StartStage(c.token, perf.StageProxyWriteTarget)
 				n, err := pipe.InReader.Read(buf)
 				if err != nil {
+					pt.EndStage(c.token, perf.StageProxyWriteTarget)
 					if err != io.EOF {
 						c.log.Error("failed to read from pipe", log.Error(err))
 					}
@@ -127,11 +138,14 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 
 				if n > 0 {
 					_, err = conn.Write(buf[:n])
+					pt.EndStage(c.token, perf.StageProxyWriteTarget)
 					if err != nil {
 						c.log.Error("failed to write to target", log.Error(err))
 						errChan <- err
 						return
 					}
+				} else {
+					pt.EndStage(c.token, perf.StageProxyWriteTarget)
 				}
 			}
 		}

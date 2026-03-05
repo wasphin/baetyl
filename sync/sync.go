@@ -18,6 +18,7 @@ import (
 	"github.com/baetyl/baetyl/v2/config"
 	"github.com/baetyl/baetyl/v2/eventx"
 	"github.com/baetyl/baetyl/v2/node"
+	"github.com/baetyl/baetyl/v2/perf"
 	"github.com/baetyl/baetyl/v2/plugin"
 	"github.com/baetyl/baetyl/v2/utils"
 )
@@ -180,6 +181,10 @@ func (s *sync) dispatch(msg *v1.Message) error {
 		}
 	case v1.MessageCMD, v1.MessageData:
 		s.log.Debug("sync downside msg", log.Any("msg", msg))
+		// [perf] 阶段3: sync_dispatch_to_downside
+		if token := msg.Metadata["token"]; token != "" {
+			defer perf.Default().TrackStage(token, perf.StageSyncDispatch)()
+		}
 		return s.pb.Publish(TopicDownside, msg)
 	case v1.MessageDeviceDelta, v1.MessageDeviceEvent, v1.MessageDevicePropertyGet:
 		s.log.Debug("sync dm msg", log.Any("msg", msg))

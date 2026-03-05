@@ -16,6 +16,7 @@ import (
 
 	"github.com/baetyl/baetyl/v2/ami"
 	"github.com/baetyl/baetyl/v2/config"
+	"github.com/baetyl/baetyl/v2/perf"
 	"github.com/baetyl/baetyl/v2/plugin"
 	"github.com/baetyl/baetyl/v2/sync"
 	utils2 "github.com/baetyl/baetyl/v2/utils"
@@ -243,6 +244,7 @@ func (c *chain) Close() error {
 }
 
 func (c *chain) chainReading() error {
+	pt := perf.Default()
 	for {
 		dt := make([]byte, utils2.ReadBuff)
 		n, err := c.pipe.OutReader.Read(dt)
@@ -250,6 +252,8 @@ func (c *chain) chainReading() error {
 			c.log.Error("read remote message close", log.Error(err))
 			return errors.Trace(err)
 		}
+		// [perf] 阶段9: chain_reading_publish_upside
+		pt.StartStage(c.token, perf.StageChainReadingPublish)
 		msg := &v1.Message{
 			Kind: v1.MessageData,
 			Metadata: map[string]string{
@@ -263,6 +267,7 @@ func (c *chain) chainReading() error {
 			c.log.Debug("ws pipe large data read", log.Any("n", n))
 		}
 		err = c.pb.Publish(c.upside, msg)
+		pt.EndStage(c.token, perf.StageChainReadingPublish)
 		if err != nil {
 			c.log.Error("failed to publish message", log.Any("topic", c.upside), log.Error(err))
 		}
