@@ -64,6 +64,7 @@ func (c *chain) RemoteConnection(pipe ami.Pipe) error {
 		c.log.Error("failed to connect to target", log.Any("target", targetAddr), log.Error(err))
 		return errors.Trace(err)
 	}
+	c.log.Info("connected to proxy target", log.Any("target", targetAddr))
 	defer conn.Close()
 
 	// 检查上下文是否已取消

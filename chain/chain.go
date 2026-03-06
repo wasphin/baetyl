@@ -187,6 +187,18 @@ func NewProxyChain(cfg config.Config, a ami.AMI, data map[string]string, needNat
 	if err != nil {
 		return nil, err
 	}
+
+	// Initialize debugOptions to avoid nil pointer in OnTimeout
+	name := data["name"]
+	namespace := data["namespace"]
+	container := data["container"]
+	opt := ami.DebugOptions{}
+	opt.KubeDebugOptions = ami.KubeDebugOptions{
+		Namespace: namespace,
+		Name:      name,
+		Container: container,
+	}
+	c.debugOptions = &opt
 	return c, nil
 }
 
