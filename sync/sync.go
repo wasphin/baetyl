@@ -106,7 +106,11 @@ func (s *sync) receiving() error {
 	if err != nil {
 		s.log.Error("failed to subscribe upside topic", log.Any("topic", TopicUpside), log.Error(err))
 	}
-	processor := pubsub.NewProcessor(upsideChan, 0, &handler{link: s.link})
+	processor := pubsub.NewProcessor(upsideChan, 0, &handler{
+		link: s.link,
+		log:  s.log,
+		sem:  make(chan struct{}, 100),
+	})
 	processor.Start()
 	defer func() {
 		s.log.Debug("unsubscribe upside")

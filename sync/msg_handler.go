@@ -1,17 +1,39 @@
 package sync
 
 import (
+	"github.com/baetyl/baetyl-go/v2/errors"
+	"github.com/baetyl/baetyl-go/v2/log"
 	v1 "github.com/baetyl/baetyl-go/v2/spec/v1"
 
 	"github.com/baetyl/baetyl/v2/plugin"
 )
 
+var (
+	ErrProcessorToManyMessages = errors.New("too many messages")
+)
+
 type handler struct {
 	link plugin.Link
+	log  *log.Logger
+	sem  chan struct{}
 }
 
 func (h *handler) OnMessage(msg interface{}) error {
-	return h.link.Send(msg.(*v1.Message))
+	select {
+	case h.sem <- struct{}{}:
+		go func(m *v1.Message) {
+			defer func() { <-h.sem }()
+
+			if err := h.link.Send(m); err != nil {
+				h.log.Error("failed to send message to link", log.Error(err))
+			}
+		}(msg.(*v1.Message))
+		return nil
+	default:
+		h.log.Warn("failed to handle message", log.Error(ErrProcessorToManyMessages))
+		//return h.link.Send(msg.(*v1.Message))
+		return nil
+	}
 }
 
 func (h *handler) OnTimeout() error {
