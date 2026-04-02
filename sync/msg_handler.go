@@ -19,21 +19,28 @@ type handler struct {
 }
 
 func (h *handler) OnMessage(msg interface{}) error {
-	select {
-	case h.sem <- struct{}{}:
-		go func(m *v1.Message) {
-			defer func() { <-h.sem }()
+	m := msg.(*v1.Message)
 
-			if err := h.link.Send(m); err != nil {
-				h.log.Error("failed to send message to link", log.Error(err))
-			}
-		}(msg.(*v1.Message))
-		return nil
-	default:
-		h.log.Warn("failed to handle message", log.Error(ErrProcessorToManyMessages))
-		//return h.link.Send(msg.(*v1.Message))
-		return nil
+	enableAsync := m.Kind == v1.MessageCMD
+
+	if enableAsync {
+		select {
+		case h.sem <- struct{}{}:
+			go func(m *v1.Message) {
+				defer func() { <-h.sem }()
+
+				if err := h.link.Send(m); err != nil {
+					h.log.Error("failed to send message to link", log.Error(err))
+				}
+			}(m)
+			return nil
+		default:
+			h.log.Warn("failed to handle message", log.Error(ErrProcessorToManyMessages))
+			return nil
+		}
 	}
+
+	return h.link.Send(m)
 }
 
 func (h *handler) OnTimeout() error {
