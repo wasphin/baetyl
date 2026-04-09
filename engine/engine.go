@@ -128,7 +128,12 @@ func (e *engineImpl) Start() {
 		e.log.Error("failed to subscribe downside topic", log.Any("topic", sync.TopicDownside), log.Error(err))
 	}
 	e.downsideChan = ch
-	e.downsideProcess = pubsub.NewProcessor(e.downsideChan, 0, &handlerDownside{e})
+	e.downsideProcess = pubsub.NewOrderedProcessor(e.downsideChan, func(msg interface{}) string {
+		if m, ok := msg.(*specv1.Message); ok {
+			return m.PartitionKey()
+		}
+		return ""
+	}, 0, &handlerDownside{e})
 	e.downsideProcess.Start()
 }
 
