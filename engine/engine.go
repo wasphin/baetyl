@@ -385,14 +385,17 @@ func getDeleteAndUpdate(desires, reports []specv1.AppInfo) (map[string]specv1.Ap
 
 func (e *engineImpl) applyApps(ns string, infos map[string]specv1.AppInfo, stats map[string]specv1.AppStats) {
 	var wg gosync.WaitGroup
+	var mu gosync.Mutex
 	for _, info := range infos {
 		wg.Add(1)
 		go func(wg *gosync.WaitGroup, info specv1.AppInfo) {
 			if err := e.applyApp(ns, info); err != nil {
 				e.log.Error("failed to apply application", log.Any("info", info), log.Error(err))
+				mu.Lock()
 				stat := stats[info.Name]
 				stat.Cause += err.Error()
 				stats[info.Name] = stat
+				mu.Unlock()
 			}
 			wg.Done()
 		}(&wg, info)
